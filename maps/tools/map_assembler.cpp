@@ -1,3 +1,4 @@
+
 //
 // Created by ash on 10/11/22.
 //
@@ -13,6 +14,57 @@
 #include <string>
 #include <memory>
 #include <vector>
+
+static inline int
+alloc_line(char**  pline, size_t*  plsize, size_t newsize) {
+  void* n = realloc(*pline, newsize);
+  if (n == NULL) return -1;
+  *pline = (char*)n;
+  *plsize = newsize;
+  return 0;
+}
+
+// implement POSIX getline() with fgets()
+static ssize_t
+getline1(char** pline, size_t*  plsize, FILE* fp) {
+  //if (*plsize < 128) if (alloc_line(pline, plsize, 128)) return -1;
+  if (*plsize < 2) if (alloc_line(pline, plsize, 2)) return -1;
+  if (*pline == NULL) return -1;
+  if (feof(fp)) return -1;
+  char* cur = *pline;
+  size_t cursize = *plsize;
+  for (;;) {
+    char* ret = fgets(cur, cursize, fp);
+    if (ret == NULL && !feof(fp)) return -1; //=> read error
+    if (ret == NULL && cur == *pline) return -1; //=> read empty
+    char* eod = (char*)memchr(cur, '\0', cursize);
+    if (feof(fp) || eod[-1] == '\n') return eod - *pline;
+    // line continued
+    cursize = *plsize + 1; // last of *pline is '\0'
+    if (alloc_line(pline, plsize, *plsize * 2)) return -1;
+    cur = *pline + *plsize - cursize;
+  }
+}
+
+// implement POSIX getline() with fgetc()
+static ssize_t
+getline2(char** pline, size_t*  plsize, FILE* fp) {
+  //if (*plsize < 128) if (alloc_line(pline, plsize, 128)) return -1;
+  if (*plsize < 2) if (alloc_line(pline, plsize, 2)) return -1;
+  if (*pline == NULL) return -1;
+  if (feof(fp)) return -1;
+  ssize_t len = 0;
+  for (int ch = fgetc(fp); ch != EOF; ch = fgetc(fp)) {
+    (*pline)[len++] = ch;
+    if ((size_t) len == *plsize) {
+      if (alloc_line(pline, plsize, *plsize * 2)) return -1;
+    }
+    if (ch == '\n') break;
+  }
+  if (len == 0) return -1;
+  (*pline)[len] = '\0';
+  return len;
+}
 
 enum EntityType : uint16_t {
     ENTITY_TYPE_STATIC_PROP = 0,
@@ -83,7 +135,7 @@ int main(int argc, char** argv) {
 
     std::map<std::string, std::list<std::shared_ptr<FileEntity>>> models;
 
-    while ((nread = getline(&line, &len, inp)) != -1) {
+    while ((nread = getline1(&line, &len, inp)) != -1) {
         if (strncmp(line, "sp", 2) == 0) {
             char type[8], model_name[16];
             EntStaticPropData attrib;
